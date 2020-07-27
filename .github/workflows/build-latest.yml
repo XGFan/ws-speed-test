@@ -28,11 +28,13 @@ jobs:
             curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
             dep ensure
         fi
-    - name: Build Server&Client
+    - name: Chmod
       run: chmod +x ./build.sh
 
     - name: Build Server&Client
       run: ./build.sh
+      shell: bash
+      working-directory: ./
 
     - name: Upload artifact
       uses: kittaakos/upload-artifact-as-is@v0
