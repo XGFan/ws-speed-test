@@ -28,9 +28,8 @@ jobs:
             curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
             dep ensure
         fi
-
-    - name: Install zip
-      run: sudo apt-get install zip
+    - name: Build Server&Client
+      run: chmod +x ./build.sh
 
     - name: Build Server&Client
       run: ./build.sh
