@@ -1,6 +1,6 @@
 ## ws-speed-test
 
-使用websocket进行测速，适用于cloudflare，可以用来选择合适的cf节点。
+使用websocket进行测速，适用于cloudflare，可以用来选择合适的cloudflare节点。
 
 
 
@@ -25,7 +25,6 @@ websocket接口，接受一个size参数，单位为MB，服务端会在握手�
 #### 客户端
 
 ```shell script
-./stClient -host yourDomainName -size 5
 Usage of stClient:
   -d int
     	max goroutine to download (default 4)
@@ -50,7 +49,7 @@ Usage of stClient:
 2020/07/27 23:15:51 addr: 104.21.26.15	speed: 800.19KB/s	http-ping: 650ms
 2020/07/27 23:15:51 addr: 104.24.164.15	speed: 798.86KB/s	http-ping: 640ms
 2020/07/27 23:15:51 addr: 104.20.140.15	speed: 797.47KB/s	http-ping: 645ms
-2020/07/27 23:15:51 addr: 104.26.211.15	speed: 796.28KB/s	http-ping: 638ms、
+2020/07/27 23:15:51 addr: 104.26.211.15	speed: 796.28KB/s	http-ping: 638ms
 ……
 ```
 
