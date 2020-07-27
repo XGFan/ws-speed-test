@@ -31,23 +31,26 @@ jobs:
 
     - name: Build Server
       run: |
-        env GOOS=windows GOARCH=amd64 go build -o stServer-win.exe
-        env GOOS=linux GOARCH=amd64 go build -o stServer-linux
-        env GOOS=darwin GOARCH=amd64 go build -o stServer-mac
+        env GOOS=windows GOARCH=amd64 go build -o stServer-win.exe -v
+        env GOOS=linux GOARCH=amd64 go build -o stServer-linux -v
+        env GOOS=darwin GOARCH=amd64 go build -o stServer-mac -v 
       working-directory: ./server
       
     - name: Build Client
       run: |
-        env GOOS=windows GOARCH=amd64 go build -o stClient-win.exe
-        env GOOS=linux GOARCH=amd64 go build -o stClient-linux
-        env GOOS=darwin GOARCH=amd64 go build -o stClient-mac
+        env GOOS=windows GOARCH=amd64 go build -o stClient-win.exe -v
+        env GOOS=linux GOARCH=amd64 go build -o stClient-linux -v
+        env GOOS=darwin GOARCH=amd64 go build -o stClient-mac -v
       working-directory: ./client
       
+    - name: Create Directory
+      run: mkdir output
+
     - name: Zip files
       uses: montudor/action-zip@v0.1.0
       with:
-        args: mkdir output; zip -q output/stServer-win.zip server/stServer-win.exe -j; zip -q output/stServer-mac.zip server/stServer-mac -j; zip -q output/stServer-linux.zip server/stServer-linux -j; zip -q output/stClient-win.zip client/stClient-win.exe -j; zip -q output/stClient-mac.zip client/stClient-mac -j; zip -q output/stClient-linux.zip client/stClient-linux -j;
-          
+        args: zip -q output/stServer-win.zip server/stServer-win.exe -j; zip -q output/stServer-mac.zip server/stServer-mac -j; zip -q output/stServer-linux.zip server/stServer-linux -j; zip -q output/stClient-win.zip client/stClient-win.exe -j; zip -q output/stClient-mac.zip client/stClient-mac -j; zip -q output/stClient-linux.zip client/stClient-linux -j;
+
     - name: Add cfip.txt
       run: cp cfip.txt output/cfip.txt
   
