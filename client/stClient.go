@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"flag"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/miekg/dns"
@@ -12,137 +13,92 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
-	"strconv"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-type LinkedList struct {
-	head *Node
-	size int
-}
-
 type Node struct {
-	ip   string
-	time int
-	next *Node
+	ip    string
+	time  int
+	speed float64
 }
 
-func (list LinkedList) string() string {
-	return list.head.next.string()
+func (p Node) String() string {
+	return fmt.Sprintf("addr: %s\tspeed: %.2fKB/s\thttp-ping: %dms", p.ip, p.speed, p.time)
 }
 
-func (p Node) string() string {
-	if p.next != nil {
-		return strconv.Itoa(p.time) + "," + p.next.string()
+type List []*Node
+
+func (list List) Len() int { return len(list) }
+func (list List) Less(i, j int) bool {
+	if list[i].speed < list[j].speed {
+		return false
+	} else if list[i].speed > list[j].speed {
+		return true
 	} else {
-		return strconv.Itoa(p.time)
+		return list[i].time < list[j].time
 	}
 }
-
-func (list *LinkedList) Add(ip string, t int) {
-	prev := list.head
-	p := prev.next
-	for p != nil && p.time < t {
-		prev = p
-		p = p.next
-	}
-	prev.next = &Node{ip, t, p}
-	list.size++
+func (list List) Swap(i, j int) {
+	list[i], list[j] = list[j], list[i]
 }
 
-func (list *LinkedList) Get(index int) *Node {
-	p := list.head
-	for i := 0; i < index+1 && p.next != nil; i++ {
-		p = p.next
-	}
-	return p
-}
+func readIps(name, host string) []string {
+	f, err := ioutil.ReadFile(name)
+	if err != nil {
+		log.Printf("can not read %s, use dns instead\n", name)
+		return findIp(host)
+	} else {
+		ips := make([]string, 0)
 
-func (list *LinkedList) Percent(per float32) int {
-	index := int(float64(list.size) * float64(per) / float64(100))
-	p := list.head
-	for i := 0; i < index && p.next != nil; i++ {
-		p = p.next
+		split := strings.Split(string(f), "\n")
+		for _, s := range split {
+			ips = append(ips, s)
+		}
+		return ips
 	}
-	return p.time
-}
-
-func (list *LinkedList) Avg() int {
-	var sum int64 = 0.0
-	p := list.head.next
-	for p != nil {
-		sum = sum + int64(p.time)
-		p = p.next
-	}
-	return int(sum / int64(list.size))
 }
 
 func main() {
-	log.Println(runtime.GOMAXPROCS(0) * 2)
-	//log.SetFlags(0)
-	f, err := ioutil.ReadFile("cfip.txt")
-	if err != nil {
-		log.Fatal(err)
+	var host = flag.String("host", "jp.test4x.com", "remote service address")
+	var file = flag.String("file", "cfip.txt", "ip list file")
+	var size = flag.Int("size", 5, "test packet size(MB)")
+	var pingRoutine = flag.Int("p", 50, "max goroutine to ping")
+	var pingCount = flag.Int("pn", 50, "result count from ping")
+	var downloadRoutine = flag.Int("d", 4, "max goroutine to download")
+	var downloadCount = flag.Int("dn", 20, "result count from download")
+	flag.Parse()
+	runtime.GOMAXPROCS(runtime.GOMAXPROCS(0) * 2)
+	ips := readIps(*file, *host)
+	list := ping(ips, *host, *pingRoutine)
+	speed(list[:*pingCount], *host, *size, *downloadRoutine)
+	sort.Sort(list)
+	for i := 0; i < *downloadCount; i++ {
+		node := list[i]
+		log.Println(node)
 	}
+}
 
-	ips := make(chan string)
-	go func() {
-		split := strings.Split(string(f), "\n")
-		for _, s := range split {
-			ips <- s
-		}
-		close(ips)
-	}()
-	maxTcpingRoutines := 100
-	waitTcping := sync.WaitGroup{}
-	waitTcping.Add(maxTcpingRoutines)
-	tcpingResult := make(chan Node)
-	for i := 0; i < maxTcpingRoutines; i++ {
-		go func() {
-			for ip := range ips {
-				i := tcping(ip, 443, time.Millisecond*300)
-				tcpingResult <- Node{ip, i, nil}
-			}
-			waitTcping.Done()
-		}()
+func speed(ips List, host string, size int, routine int) {
+	ws := &websocket.Dialer{
+		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true, ServerName: host},
+		HandshakeTimeout: time.Second * 2,
 	}
-	go func() {
-		waitTcping.Wait()
-		close(tcpingResult)
-	}()
-
-	list := LinkedList{head: &Node{}}
-	for res := range tcpingResult {
-		list.Add(res.ip, res.time)
-	}
-
-	log.Println(list.Get(0))
-	stIp := make(chan string)
-
-	go func() {
-		var max int
-		if 100 < list.size {
-			max = 100
-		} else {
-			max = list.size
-		}
-		for i := 0; i < max; i++ {
-			node := list.Get(i)
-			stIp <- node.ip
-		}
-		close(stIp)
-	}()
-
-	log.Println(list.Get(99))
-
 	group := sync.WaitGroup{}
-	group.Add(10)
-	for i := 0; i < 10; i++ {
+	group.Add(routine)
+	var ops int32 = -1
+	for i := 0; i < routine; i++ {
 		go func() {
-			for ip := range stIp {
-				speedTest(ip, "jp.test4x.com")
+			for {
+				index := int(atomic.AddInt32(&ops, 1))
+				if index < ips.Len() {
+					ips[index].speed = speedTest(ws, ips[index].ip, size)
+				} else {
+					break
+				}
 			}
 			group.Done()
 		}()
@@ -150,45 +106,97 @@ func main() {
 	group.Wait()
 }
 
-func speedTest(ip string, host string) {
-	u := url.URL{Scheme: "wss", Host: ip, Path: "/test", RawQuery: "size=2"}
-	//log.Printf("connecting to %s", u.String())
+func (list *List) toChannel(maxCount int) chan *Node {
+	stIp := make(chan *Node)
+	go func() {
+		var max int
+		if maxCount < list.Len() {
+			max = maxCount
+		} else {
+			max = list.Len()
+		}
+		sort.Sort(list)
+		for i := 0; i < max; i++ {
+			node := (*list)[i]
+			stIp <- node
+		}
+		close(stIp)
+	}()
+	return stIp
+}
+func ping(ips []string, host string, routine int) List {
+	httpClient := &http.Client{
+		Timeout: 1500 * time.Millisecond,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+				ServerName:         host,
+			},
+		},
+	}
 
+	waitHttpPing := sync.WaitGroup{}
+	waitHttpPing.Add(routine)
+	httpPingResult := make(chan Node)
+	var ops int32 = -1
+	for i := 0; i < routine; i++ {
+		go func() {
+			for {
+				index := int(atomic.AddInt32(&ops, 1))
+				if index < len(ips) {
+					ip := ips[index]
+					i := httpGet(httpClient, ip)
+					httpPingResult <- Node{ip, i, 0}
+				} else {
+					break
+				}
+			}
+			waitHttpPing.Done()
+		}()
+	}
+	go func() {
+		waitHttpPing.Wait()
+		close(httpPingResult)
+	}()
+	list := List{}
+	for res := range httpPingResult {
+		list = append(list, &Node{ip: res.ip, time: res.time})
+	}
+	sort.Sort(list)
+	return list
+}
+
+func speedTest(ws *websocket.Dialer, ip string, size int) float64 {
+	u := url.URL{Scheme: "wss", Host: ip, Path: "/test", RawQuery: fmt.Sprintf("size=%d", size)}
 	start := time.Now().UnixNano()
 	var header http.Header = map[string][]string{}
-	header.Add("host", host)
-	dialer := websocket.Dialer{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		//HandshakeTimeout: time.Second * 1,
-	}
-	c, _, err := dialer.Dial(u.String(), header)
+	header.Set("host", ws.TLSClientConfig.ServerName)
+	c, _, err := ws.Dial(u.String(), header)
 	if err != nil {
-		//log.Println("dial:", err)
-		return
+		return 0
 	}
 	defer c.Close()
-
 	_, message, err := c.ReadMessage()
 	if err != nil {
-		//log.Println("read:", err)
-		return
+		return 0
 	}
 	end := time.Now().UnixNano()
 	kb := len(message) / 1024
-	log.Printf("%s : %.2fkb/s", ip, float64(kb)/(float64(end-start)/1000000)*1000)
+	speed := float64(kb) / (float64(end-start) / 1000000) * 1000
+	log.Printf("%s : %.2fkb/s", ip, speed)
+	return speed
 }
 
-func tcping(host string, port int, timeout time.Duration) int {
+func httpGet(client *http.Client, ip string) int {
+	request, _ := http.NewRequest("GET", fmt.Sprintf("https://%s/204", ip), nil)
+	request.Header.Set("host", client.Transport.(*http.Transport).TLSClientConfig.ServerName)
 	startTime := time.Now()
-	target := fmt.Sprintf("%s:%d", host, port)
-	conn, err := net.DialTimeout("tcp", target, timeout)
-	endTime := time.Now()
+	_, err := client.Do(request)
 	if err != nil {
 		return math.MaxInt16
 	} else {
-		defer conn.Close()
-		var t = float64(endTime.Sub(startTime)) / float64(time.Millisecond)
-		//log.Printf(" addr=%s time=%4.2fms", conn.RemoteAddr().String(), t)
+		var t = float64(time.Now().Sub(startTime)) / float64(time.Millisecond)
+		log.Printf(" addr=%s time=%4.2fms", ip, t)
 		return int(t)
 	}
 }
