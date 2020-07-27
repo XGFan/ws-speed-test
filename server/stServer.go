@@ -56,12 +56,8 @@ func test(w http.ResponseWriter, r *http.Request) {
 	log.Printf("write %dMB in %dms\n", size, (end-start)/1000000)
 }
 
-func main() {
-	flag.Parse()
-	log.SetFlags(0)
-	http.HandleFunc("/test", test)
-	http.HandleFunc("/", home)
-	log.Fatal(http.ListenAndServe(*addr, nil))
+func empty(w http.ResponseWriter,r *http.Request){
+	w.WriteHeader(204)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -129,4 +125,14 @@ func home(w http.ResponseWriter, r *http.Request) {
 </table>
 </body>
 </html>`))
+}
+
+func main() {
+	flag.Parse()
+	log.SetFlags(0)
+	http.HandleFunc("/test", test)
+	http.HandleFunc("/204", empty)
+
+	http.HandleFunc("/", home)
+	log.Fatal(http.ListenAndServe(*addr, nil))
 }
