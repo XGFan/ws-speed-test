@@ -1,6 +1,8 @@
-## ws-speed-test
+# ws-speed-test
 
-使用websocket进行测速，适用于cloudflare，可以用来选择合适的cloudflare节点。
+![build-latest](https://github.com/XGFan/ws-speed-test/workflows/build-latest/badge.svg)
+
+使用websocket进行测速，可以用来选择合适的cloudflare节点。
 
 
 
@@ -53,3 +55,6 @@ Usage of stClient:
 ……
 ```
 
+#### 下载
+
+可以在最新的Github Action中找到对应平台的文件。
