@@ -44,6 +44,60 @@ func (list List) Less(i, j int) bool {
 func (list List) Swap(i, j int) {
 	list[i], list[j] = list[j], list[i]
 }
+func (list List) ToChan() IpChan {
+	result := make(chan *Node)
+	go func() {
+		for _, item := range list {
+			result <- item
+		}
+		close(result)
+	}()
+	return result
+}
+func (list List) Take(size int) List {
+	max := list.Len()
+	if max > size {
+		max = size
+	}
+	return list[:max]
+}
+func (list List) Sort() List {
+	sort.Sort(list)
+	return list
+}
+func (list List) ParallelMap(routine int, f func(x *Node)) List {
+	return list.ToChan().ParallelMap(routine, f).ToList()
+}
+
+type IpChan chan *Node
+
+func (c IpChan) ToList() List {
+	list := List{}
+	for item := range c {
+		list = append(list, item)
+	}
+	sort.Sort(list)
+	return list
+}
+func (c IpChan) ParallelMap(routine int, f func(x *Node)) IpChan {
+	result := make(chan *Node)
+	wg := sync.WaitGroup{}
+	wg.Add(routine)
+	for i := 0; i < routine; i++ {
+		go func() {
+			for node := range c {
+				f(node)
+				result <- node
+			}
+			wg.Done()
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(result)
+	}()
+	return result
+}
 
 func main() {
 	var host = *flag.String("host", "jp.test4x.com", "remote service address")
@@ -55,22 +109,25 @@ func main() {
 	var downloadCount = *flag.Int("dn", 20, "result count from download")
 	flag.Parse()
 	runtime.GOMAXPROCS(runtime.GOMAXPROCS(0) * 2)
-	ipChan := getIp(file, host)
-	ipAndTime := channelSort(channelMap(ipChan, pingRoutine, ping(host)), pingCount)
-	ipAndTimeAndSpeed := channelMap(ipAndTime, downloadRoutine, speed(host, size))
-	list := channelToList(ipAndTimeAndSpeed, downloadCount)
+	list := GetIp(file, host).
+		ParallelMap(pingRoutine, ping(host)).
+		Sort().
+		Take(pingCount).
+		ParallelMap(downloadRoutine, speed(host, size)).
+		Sort().
+		Take(downloadCount)
 	for _, node := range list {
 		log.Println(node)
 	}
 }
 
-func getIp(fileName, host string) chan *Node {
+func GetIp(fileName, host string) List {
 	bytes, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		log.Printf("can not read %s, use dns instead\n", fileName)
-		return findIp(host)
+		return IpChan(findIp(host)).ToList()
 	} else {
-		return readIp(bytes)
+		return IpChan(readIp(bytes)).ToList()
 	}
 }
 
@@ -141,7 +198,7 @@ func findIp(host string) chan *Node {
 			ip: k,
 		})
 	}
-	return listToChannel(ips)
+	return List(ips).ToChan()
 }
 
 func websocketTest(ws *websocket.Dialer, ip string, size int) float64 {
@@ -180,56 +237,6 @@ func httpTest(client *http.Client, ip string) int {
 		log.Printf(" addr=%s time=%4.2fms", ip, t)
 		return int(t)
 	}
-}
-
-func channelMap(c chan *Node, routine int, f func(x *Node)) chan *Node {
-	result := make(chan *Node)
-	wg := sync.WaitGroup{}
-	wg.Add(routine)
-	for i := 0; i < routine; i++ {
-		go func() {
-			for node := range c {
-				f(node)
-				result <- node
-			}
-			wg.Done()
-		}()
-	}
-	go func() {
-		wg.Wait()
-		close(result)
-	}()
-	return result
-}
-
-func channelSort(c chan *Node, size int) chan *Node {
-	list := channelToList(c, size)
-	return listToChannel(list)
-}
-
-func listToChannel(list List) chan *Node {
-	result := make(chan *Node)
-	go func() {
-		for _, item := range list {
-			result <- item
-		}
-		close(result)
-	}()
-	return result
-}
-
-func channelToList(c chan *Node, size int) List {
-	list := List{}
-	for item := range c {
-		list = append(list, item)
-	}
-	sort.Sort(list)
-	max := list.Len()
-	if max > size {
-		max = size
-	}
-	list = list[:max]
-	return list
 }
 
 func ping(host string) func(n *Node) {
