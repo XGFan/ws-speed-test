@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  Build_And_Release:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^1.13
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+
+    - name: Get dependencies
+      run: |
+        go get -v -t -d ./...
+        if [ -f Gopkg.toml ]; then
+            curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+            dep ensure
+        fi
+    - name: Chmod
+      run: chmod +x ./build.sh
+
+    - name: Build Server&Client
+      run: ./build.sh
+      shell: bash
+      working-directory: ./
+
+    - name: Create Release1
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: build/stClient-win.exe application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create Release2
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: build/stClient-mac application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create Release3
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: build/stClient-linux application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create Release4
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: build/stServer-win.exe application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create Release5
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: build/stServer-linux application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create Release6
+      uses: JasonEtco/upload-to-release@master
+      with:
+        args: build/stServer-mac application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
