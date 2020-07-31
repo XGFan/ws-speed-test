@@ -56,7 +56,7 @@ func test(w http.ResponseWriter, r *http.Request) {
 	log.Printf("write %dMB in %dms\n", size, (end-start)/1000000)
 }
 
-func empty(w http.ResponseWriter,r *http.Request){
+func empty(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
@@ -82,9 +82,9 @@ func home(w http.ResponseWriter, r *http.Request) {
                 }
                 let url
                 if (location.protocol == "http:") {
-                    url = "ws://" + location.host + "/test?size=10"
+                    url = "ws://" + location.host + "/test?size=" + input.value
                 } else {
-                    url = "wss://" + location.host + "/test?size=10"
+                    url = "wss://" + location.host + "/test?size=" + input.value
                 }
                 ws = new WebSocket(url);
                 let start
